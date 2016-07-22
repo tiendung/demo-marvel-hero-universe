@@ -30,45 +30,45 @@
 
 (function () {
   "use strict";
-  var Foxx = require("org/arangodb/foxx"),
-    ArangoError = require("org/arangodb").ArangoError,
-    Heroes = require("./repositories/heroes").Repository,
-    Hero = require("./models/hero").Model,
-    _ = require("underscore"),
+  var _ = require("underscore"),
     db = require("internal").db,
     joi = require("joi"),
-    controller,
     edges,
-    vertices,
-    heroes;
+    vertices;
 
-  controller = new Foxx.Controller(applicationContext);
   vertices = db._collection("marvel_vertices");
   edges = db._collection("marvel_edges");
-  heroes = new Heroes(vertices, {
-    model: Hero
-  });
+
+  const createRouter = require('@arangodb/foxx/router');
+  const router = createRouter();
+  module.context.use(router);
 
   /** Do a like search on all hero names
    *
    * This function simply returns the list of all heroes containing the given string.
    */
-  controller.get('/search/:content', function (req, res) {
-    var searchString = req.params("content");
-    res.json(_.map(heroes.like(searchString), function (h) {
-      return h.forClient();
+  router.get('/search/:content', function (req, res) {
+    var searchString = req.param("content");
+
+    var q = `
+      FOR hero IN marvel_vertices
+      FILTER LIKE(hero.name, '%${searchString}%', true)
+      RETURN hero
+    `;
+    console.log(q.replace(/\s+/g, ' '));
+    var heroes = db._query(q).toArray();
+    
+    res.json(_.map(heroes, function (h) {
+      return h;
     }));
-  }).pathParam("content", {
-    description: "The string to search for",
-    type: joi.string()
   });
 
   /** Get the neighbourhood of a specific hero
    *
    * This function returns all friends of a hero.
    */
-  controller.get('/hero/:id', function (req, res) {
-    var key = req.params("id");
+  router.get('/hero/:id', function (req, res) {
+    var key = req.param("id");
     var id = vertices.name() + "/" + key;
     var allHeros = {};
     var start = vertices.document(id);
@@ -108,8 +108,5 @@
         result.nodes.push(n);
     });
     res.json(result);
-  }).pathParam("id", {
-    description: "The id of the hero",
-    type: joi.string()
   });
 }());
